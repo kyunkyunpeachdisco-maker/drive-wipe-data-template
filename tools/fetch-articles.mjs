@@ -40,10 +40,10 @@ const toText = html => decode(decode(cdata(html))
 
 // botを弾くサイトがあるので、一般的なブラウザのUAで取りに行く
 async function fetchPage(url) {
-  const get = async u => {
+  const get = async (u, more = {}) => {
     const res = await fetch(u, { headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", ...more,
     }, redirect: "follow" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
@@ -51,9 +51,10 @@ async function fetchPage(url) {
   try { return await get(url); }
   catch (e) {
     // ActionsのIPを弾くサイト（ココログ等）は、読み取りプロキシ経由でもう一度だけ試す
-    const t = await get("https://r.jina.ai/" + url);
-    const i = t.indexOf("Markdown Content:");
-    return i >= 0 ? t.slice(i + 17) : t;
+    // 元のHTMLやXMLのまま受け取る（文章に直した形だと、フィードの中の記事を見分けられない）
+    const t = await get("https://r.jina.ai/" + url, { "X-Return-Format": "html", "X-No-Cache": "true" });
+    if (t.trim()) return t;
+    throw e;
   }
 }
 
@@ -73,6 +74,7 @@ async function listFeed(url) {
     }
     return out;
   }
+  if (/\.(xml|rdf|rss|atom)(\?|$)/i.test(url)) throw new Error("フィードの形で読めませんでした");
   // ふつうのページ（人気順の一覧など）は、記事を1本ずつ見分けられないので、ページの文章をまるごと1件として持ち帰る
   const title = toText((body.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "") || url;
   const main = (body.match(/<main[\s>][\s\S]*<\/main>/i) || body.match(/<body[\s>][\s\S]*<\/body>/i) || [body])[0];
