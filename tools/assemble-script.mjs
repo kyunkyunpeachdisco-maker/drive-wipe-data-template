@@ -125,6 +125,7 @@ for (const k of Object.keys(index)) {
   }
 }
 index[key] = { label: index[key]?.label || rec.meta?.title || key, videoId: id, start: 0, end: covered,
-               savedAt: now, fav: index[key]?.fav || false, writer: "claude-code" };
+               savedAt: now, fav: index[key]?.fav || false, writer: "claude-code",
+               channel: rec.meta?.channelTitle || "", topics: topics.map(t => t.title) };
 writeFileSync("scripts/_index.json", JSON.stringify(index, null, 2) + "\n");
 console.log(`書き出しました: scripts/${key}.json`);
