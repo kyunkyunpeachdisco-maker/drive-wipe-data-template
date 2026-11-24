@@ -1,0 +1,43 @@
+name: make-audio
+
+# 台本の音声をVOICEVOXで作って audio/ に置く。頼まれたときだけ動く（台本を直すたびには動かない）。
+# 頼み方は2つ：
+#   - audio/request.txt に「台本の名前 [話者ID]」を1行ずつ書いて保存（push）する
+#   - Actions タブ → make-audio → Run workflow で、台本の名前を入れる
+# まだ音声がない発話だけ作る。台本から消えた発話の音声は片づける。
+# 処理の中身は tools/audio-requests.sh（道具の更新で新しくなる）
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'audio/request.txt'
+  workflow_dispatch:
+    inputs:
+      key:
+        description: '台本の名前（例: XXXXXXXXXXX_0-1800）'
+        required: true
+      voice_id:
+        description: 'VOICEVOXの話者ID（空なら avatar/settings.json で選ばれている声）'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: make-audio
+  cancel-in-progress: false
+
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 音声を作る
+        env:
+          KEY: ${{ inputs.key }}
+          VOICE: ${{ inputs.voice_id }}
+        run: bash tools/audio-requests.sh

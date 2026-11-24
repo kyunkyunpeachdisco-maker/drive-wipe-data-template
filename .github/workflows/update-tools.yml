@@ -1,0 +1,31 @@
+name: update-tools
+
+# 道具（tools/ と 台本の書き方.md）を、公開リポジトリ drive-wipe の data-template/ の最新に入れ替える。毎週1回と、手で動かしたとき。
+# あなたが書いたもの（lines/ scripts/ character/ avatar/ など）には触らない。
+# ワークフローのファイル（このファイルなど）は Actions からは書き換えられないので、
+# 更新があればログに出す。AIエージェントに「道具を更新して」と頼むと入れ替わる。
+
+on:
+  schedule:
+    - cron: '41 19 * * 0'   # 日本時間 月曜 4時41分
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 道具を入れ替える
+        run: bash tools/update-tools.sh
+      - name: 保存する
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add tools 台本の書き方.md README.md CLAUDE.md
+          git diff --cached --quiet && { echo "変更なし"; exit 0; }
+          git commit -m "更新: 道具をひな形の最新に"
+          for i in 1 2 3; do git push && exit 0; git pull --rebase; done
+          git push

@@ -1,0 +1,1 @@
+# 1行に1つ。終わった依頼は自動で消えます（書き方は .github/workflows/watch-video.yml の先頭）

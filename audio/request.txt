@@ -1,0 +1,1 @@
+# 声を付けたい台本の名前を1行に1つ（書き方は .github/workflows/make-audio.yml の先頭）

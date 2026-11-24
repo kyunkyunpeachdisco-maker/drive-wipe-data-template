@@ -1,0 +1,19 @@
+{
+  "player-camX": "0.02",
+  "player-bg": "day",
+  "player-camY": "0.02",
+  "player-gripStrength": "0.8",
+  "player-wipeShape": "landscape",
+  "player-wheelZ": "0.1",
+  "player-engine": "voicevox",
+  "player-wipeSize": "22",
+  "player-framing": "wheel",
+  "player-wheelSize": "1",
+  "player-wheelTilt": "0.15",
+  "player-camAim": "0.5",
+  "player-camDist": "0.8",
+  "player-armSpread": "0.5",
+  "player-armHeight": "0.5",
+  "player-wheelY": "0.24",
+  "player-voice-voicevox": "8"
+}
