@@ -8,7 +8,8 @@ name: watch-video
 #   https://www.youtube.com/watch?v=XXXX 30    最初の30分だけ記録する
 #   候補                                       前に使ったチャンネルの新着を videos/candidates.md に並べる
 #   候補 北海道 海沿い                          キーワードで探した候補を並べる
-#   記事                                       記事の取り込みだけ
+#   記事                                       フィードの新着記事の取り込みだけ
+#   記事 https://…（空白で区切って何本でも）     その記事を取り込む
 # Gemini の1日の枠が尽きて途中で止まった動画は、依頼を残しておき、翌日の夕方に自動で続きを記録する。
 # 必要な Secrets: GEMINI_API_KEY（Google AI Studio のキー）、YOUTUBE_API_KEY（YouTube Data API v3 のキー）
 # 処理の中身は tools/watch-requests.sh（道具の更新で新しくなる）
