@@ -5,7 +5,8 @@
 // 台本を書くときに、Claude Code がこの本文を読んで雑談の材料にする。
 //
 // 使い方: データリポジトリの中で実行する（GitHub Actions の watch-video.yml から）。
-//   PER_FEED   1つのフィードから拾う本数（既定3）
+//   PER_FEED      1つのフィードから拾う本数（既定3）
+//   ARTICLE_URLS  空白区切りの記事のURL。書くと、フィードは見ずに、その記事だけを取り込む
 //
 // 出力: articles/<記事>.md（タイトル・URL・取得日・本文）。同じURLは取り直さない
 
@@ -89,7 +90,8 @@ async function articleText(url) {
 
 /* ---------- 本体 ---------- */
 const feeds = [...new Set(readSafe("character/feeds.md").replace(/<!--[\s\S]*?-->/g, "").match(/https?:\/\/\S+/g) || [])];
-if (!feeds.length) { console.log("character/feeds.md にフィードがありません。"); process.exit(0); }
+const urls = (process.env.ARTICLE_URLS || "").match(/https?:\/\/\S+/g) || [];
+if (!feeds.length && !urls.length) { console.log("character/feeds.md にフィードがありません。"); process.exit(0); }
 
 // すでに取り込んだURL（以前の方式で読んだ character/reads も含める）
 const known = new Set();
@@ -99,6 +101,36 @@ for (const dir of ["articles", "character/reads"]) {
     const u = (readSafe(`${dir}/${f}`).match(/^-\s*URL:\s*(\S+)/m) || [])[1];
     if (u) known.add(u);
   }
+}
+
+function save(url, title, text) {
+  if (text.length < 200) throw new Error("本文がほとんど取れませんでした");
+  mkdirSync("articles", { recursive: true });
+  writeFileSync(`articles/${slug(url)}.md`,
+    `# ${title || url}
+
+- URL: ${url}
+- 取得日: ${new Date().toISOString().slice(0, 10)}
+- 使った台本: （まだ）
+
+## 本文
+
+${text.slice(0, BODY_MAX)}
+`);
+  known.add(url);
+}
+
+if (urls.length) {
+  let failed = 0;
+  for (const url of urls) {
+    if (known.has(url)) { console.log(`もうあります: ${url}`); continue; }
+    try {
+      const a = await articleText(url);
+      save(url, a.title, a.text);
+      console.log(`取り込み: ${a.title || url}`);
+    } catch (e) { failed++; console.log(`読めませんでした: ${url}（${e.message}）`); }
+  }
+  process.exit(failed ? 5 : 0);
 }
 
 let added = 0;
@@ -117,11 +149,8 @@ for (const f of feeds) {
         const a = await articleText(it.url);
         text = a.text; title = title || a.title;
       }
-      if (text.length < 200) throw new Error("本文がほとんど取れませんでした");
-      mkdirSync("articles", { recursive: true });
-      writeFileSync(`articles/${slug(it.url)}.md`,
-        `# ${title || it.url}\n\n- URL: ${it.url}\n- 取得日: ${new Date().toISOString().slice(0, 10)}\n- 使った台本: （まだ）\n\n## 本文\n\n${text.slice(0, BODY_MAX)}\n`);
-      known.add(it.url); n++; added++;
+      save(it.url, title, text);
+      n++; added++;
       console.log(`  取り込み: ${title || it.url}`);
     } catch (e) { console.log(`  読めませんでした: ${it.title || it.url}（${e.message}）`); }
   }

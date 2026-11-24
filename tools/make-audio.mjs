@@ -6,10 +6,11 @@
 //   PCで手元のVOICEVOXを使うこともできる（起動してから実行する）。
 //
 // - すでにある音声は作り直さない（ファイル名が本文のハッシュなので、書き換えた発話だけ作る）
+// - 同じ声・同じセリフの音声がほかの台本にあれば、作らずに写す（同じ動画の台本を作り足したときの実況など）
 // - 台本から消えた発話の音声は片づける
 // - アプリの保存形式に合わせる：16kHzモノラルのwav、index.json は {engine, voice, rate, style, title, items[]}
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, copyFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const [key, speakerId, engineUrl = "http://127.0.0.1:50021"] = process.argv.slice(2);
@@ -43,11 +44,17 @@ async function synth(text) {
 const dir = `audio/${key}/voicevox-${speakerId}`;
 mkdirSync(dir, { recursive: true });
 const items = [];
-let made = 0, kept = 0;
+// ほかの台本の同じ声の置き場
+const others = readdirSync("audio", { withFileTypes: true }).filter(d => d.isDirectory() && d.name !== key)
+  .map(d => `audio/${d.name}/voicevox-${speakerId}`).filter(d => existsSync(d));
+let made = 0, kept = 0, shared = 0;
 for (const text of lines) {
   const h = hash12(text);
   if (existsSync(`${dir}/${h}.wav`)) kept++;
-  else {
+  else if (others.some(d => existsSync(`${d}/${h}.wav`))) {
+    copyFileSync(`${others.find(d => existsSync(`${d}/${h}.wav`))}/${h}.wav`, `${dir}/${h}.wav`);
+    shared++;
+  } else {
     writeFileSync(`${dir}/${h}.wav`, await synth(text));
     made++;
     if (made % 10 === 0) console.log(`  ${made}件 作りました`);
@@ -58,8 +65,12 @@ const want = new Set(items.map(x => `${x.h}.wav`));
 let removed = 0;
 for (const f of readdirSync(dir)) if (f.endsWith(".wav") && !want.has(f)) { unlinkSync(`${dir}/${f}`); removed++; }
 
+let createdAt = new Date().toISOString();
+if (!made && !shared && !removed) {
+  try { createdAt = JSON.parse(readFileSync(`${dir}/index.json`, "utf8")).createdAt || createdAt; } catch {}
+}
 writeFileSync(`${dir}/index.json`, JSON.stringify({
   engine: "voicevox", voice: String(speakerId), voiceName, rate: "1", style: "",
-  title: script.meta?.title || script.videoId, createdAt: new Date().toISOString(), items
+  title: script.meta?.title || script.videoId, createdAt, items
 }, null, 2) + "\n");
-console.log(`完了: ${dir}（新しく ${made}件・そのまま ${kept}件・片づけ ${removed}件）`);
+console.log(`完了: ${dir}（新しく ${made}件・ほかの台本から ${shared}件・そのまま ${kept}件・片づけ ${removed}件）`);

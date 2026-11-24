@@ -23,7 +23,8 @@ while IFS= read -r line || [ -n "$line" ]; do
   echo "::group::$l"
   rc=0
   if [ "$1" = "記事" ]; then
-    :
+    shift
+    [ $# -gt 0 ] && { ARTICLE_URLS="$*" node tools/fetch-articles.mjs || rc=$?; }
   elif [ "$1" = "候補" ]; then
     shift
     LIST_ONLY=true QUERY="$*" node tools/watch-video.mjs || rc=$?
@@ -35,6 +36,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     0) echo "済み: $l" ;;
     2) echo "運転者や話し声が入っている動画のため取りやめました: $l" ;;
     3) echo "途中まで（続きは次の実行で）: $l"; keep="$keep$l"$'\n' ;;
+    5) echo "読めない記事がありました（依頼は終わりにします）: $l"; failed=1 ;;
     *) echo "失敗しました: $l"; keep="$keep$l"$'\n'; failed=1 ;;
   esac
 done < "$REQ"

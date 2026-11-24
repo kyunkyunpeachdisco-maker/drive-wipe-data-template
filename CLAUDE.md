@@ -8,21 +8,24 @@
 1. **材料が届く**（自動・AIの課金なし）：`videos/request.txt` に動画のURLを書いて保存すると、Actions `watch-video` が
    - フィードの新着記事の本文を `articles/` に置く
    - 動画を Gemini に見せて「何分何秒に何が映っているか」を `videos/` に記録する（動画1本につき1度きり）
-2. **セリフを書く**（AIエージェント）：`videos/` と `articles/` を読んで `lines/<動画ID>.txt` にセリフを書き、
-   `node tools/assemble-script.mjs <動画ID>` で `scripts/` の台本にする
+2. **セリフを書く**（AIエージェント）：`videos/` と `articles/` を読んで `lines/<動画ID>/` にセリフを書き、
+   `node tools/assemble-script.mjs <動画ID> <台本の名前>` で `scripts/` の台本にする
 3. **声を付ける**（頼まれたとき・無料）：`audio/request.txt` に台本の名前を書いて保存すると、Actions `make-audio` が VOICEVOX で音声を作る
 4. **見る**：アプリの「保存済みから選ぶ」に台本が並ぶ
 
 セリフの書き直しは 2 だけをやり直せばよく、Gemini の枠は使いません。
+**1本の動画に、台本を何本でも持てます。** 実況（`base.txt`）は使い回し、記事のコーナーだけが違う台本を作り足します。
 
 ## 構造
 
 - `videos/<動画ID>.json` … 映像の記録。`items[]` に時刻（`t` `abs`）・見えているもの（`scene`）・読めた文字（`text`）・
   場所（`place`）・運転操作（`act` `amount`）・その区間の様子（`mood`: busy / quiet / stop）。**手で書き換えない**
 - `articles/<記事>.md` … フィードから取り込んだ記事の本文（タイトル・URL・取得日・使った台本・本文）
-- `lines/<動画ID>.txt` … 書いたセリフ。1行に1発話（`時刻 実況|雑談 セリフ`）。台本の元になる
-- `scripts/<動画ID>_<開始>-<終了>.json` … 台本。アプリが読む。`lines/` から組み立てたもの
+- `lines/<動画ID>/base.txt` … その動画の台本すべてで使い回すセリフ（実況と、記事に関係しないひとこと）
+- `lines/<動画ID>/<台本の名前>.txt` … その台本だけのセリフ（記事のコーナーなど）。1行に1発話（`時刻 実況|雑談 セリフ`）
+- `scripts/<動画ID>_<開始>-<終了>_<台本の名前>.json` … 台本。アプリが読む。`lines/` から組み立てたもの（名前が `main` のときは、後ろに名前が付かない）
 - `scripts/_index.json` … 台本の一覧（アプリの表示名・お気に入り）
+- `playlists.json` … アプリのプレイリスト
 - `character/persona.md` … キャラクター設定。セリフを書くときの人物像
 - `character/interests.md` … 興味・関心。雑談の引き出し
 - `character/feeds.md` … 記事を取り込むフィード（RSS/Atom）や一覧ページのURL。1行に1つ
