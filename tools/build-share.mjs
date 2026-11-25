@@ -18,6 +18,9 @@ const readSafe = p => { try { return readFileSync(p, "utf8"); } catch { return "
 const json = p => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
 const put = (p, data) => { mkdirSync(p.replace(/\/[^/]*$/, ""), { recursive: true }); writeFileSync(p, data); };
 
+// 公開するのは日付まで。作った時刻は出さない
+const dayOf = iso => { const d = new Date(iso || ""); return isNaN(d) ? "" : d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }); };
+
 const keys = [...new Set(readSafe("share/list.txt").split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#")))];
 const index = json("scripts/_index.json") || {};
 const settings = json("avatar/settings.json") || {};
@@ -62,7 +65,7 @@ for (const key of keys) {
   put(`${out}/scripts/${key}.json`, JSON.stringify({
     videoId: s.videoId, start: s.start || 0, end: s.end, covered: s.covered, ...(s.edition ? { edition: s.edition } : {}), ...(s.title ? { title: s.title } : {}),
     meta: { title: s.meta?.title || "", channelTitle: s.meta?.channelTitle || "", duration: s.meta?.duration || 0 },
-    generatedAt: s.generatedAt || "", chapters: s.chapters || [],
+    generatedAt: dayOf(s.generatedAt), chapters: s.chapters || [],
     topics: (s.topics || []).map(({ title, start, end, url, article }) => ({ title, start, end, ...(ok({ url }) ? { url, article: String(article || "") } : {}) })), sources, voice,
     items: s.items.map(({ t, abs, line, kind, act, amount, place, face, gesture }) =>
       ({ t, abs, line, kind, act, amount, place, ...(face ? { face } : {}), ...(gesture ? { gesture } : {}) })),
@@ -77,7 +80,7 @@ const vids = new Set(items.map(i => i.videoId));
 const newest = kind => all.filter(t => t.kind === kind && t.when !== "go" && t.when !== "back").sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 10);
 const talks = items.length ? [...new Set([...all.filter(t => t.kind === "video" ? vids.has(t.videoId) : t.when === "go" || t.when === "back"), ...newest("any"), ...newest("article")])] : [];
 if (talks.length) {
-  put(`${out}/talks.json`, JSON.stringify({ version: 1, talks }));
+  put(`${out}/talks.json`, JSON.stringify({ version: 1, talks: talks.map(t => ({ ...t, addedAt: dayOf(t.addedAt) })) }));
   const take = pickVoice("talks");
   if (take) {
     const meta = json(`audio/talks/${take}/index.json`), want = new Set(talks.flatMap(t => t.lines.map(l => l.line)));
