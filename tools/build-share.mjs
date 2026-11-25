@@ -43,7 +43,10 @@ for (const key of keys) {
   const s = json(`scripts/${key}.json`);
   if (!s) { console.log(`台本が見つからないので飛ばします: ${key}`); continue; }
   const info = index[key] || {};
-  const sources = articles.filter(a => a.used.includes(key) && /^https?:\/\//.test(a.url)).map(a => ({ title: a.title, url: a.url }));
+  const ok = a => a && typeof a.url === "string" && /^https?:\/\//.test(a.url);
+  const sources = Array.isArray(s.sources) && s.sources.some(ok)
+    ? s.sources.filter(ok).map(a => ({ title: String(a.title || ""), url: a.url }))
+    : articles.filter(a => a.used.includes(key) && ok(a)).map(a => ({ title: a.title, url: a.url }));
   let voice = null;
   const take = pickVoice(key);
   if (take) {
@@ -58,7 +61,8 @@ for (const key of keys) {
   put(`${out}/scripts/${key}.json`, JSON.stringify({
     videoId: s.videoId, start: s.start || 0, end: s.end, covered: s.covered, ...(s.edition ? { edition: s.edition } : {}), ...(s.title ? { title: s.title } : {}),
     meta: { title: s.meta?.title || "", channelTitle: s.meta?.channelTitle || "", duration: s.meta?.duration || 0 },
-    topics: s.topics || [], sources, voice,
+    generatedAt: s.generatedAt || "", chapters: s.chapters || [],
+    topics: (s.topics || []).map(({ title, start, end, url, article }) => ({ title, start, end, ...(ok({ url }) ? { url, article: String(article || "") } : {}) })), sources, voice,
     items: s.items.map(({ t, abs, line, kind, act, amount, place }) => ({ t, abs, line, kind, act, amount, place })),
   }));
   items.push({ key, videoId: s.videoId, label: info.label || s.meta?.title || key, title: s.title || "", end: s.covered ?? s.end, topics: (s.topics || []).map(t => t.title) });

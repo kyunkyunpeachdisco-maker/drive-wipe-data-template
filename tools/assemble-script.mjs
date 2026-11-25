@@ -59,7 +59,7 @@ process.exit(bad ? 1 : 0);
 
 // 1つのファイルを読む
 function readLines(path, errors) {
-  const out = { lines: [], drop: new Set(), title: "", base: "base" };
+  const out = { lines: [], drop: new Set(), title: "", base: "base", articles: {} };
   // 「# コーナー1：題（…）」の見出しから次の見出しまでを、1本の記事のコーナーとして覚える
   // （画面の「いま話している記事」の札と、再生バーの色分けに使う）
   let topicNow = null;
@@ -69,6 +69,13 @@ function readLines(path, errors) {
     if (l.startsWith("#")) {
       const head = l.match(/^#+\s*(題|実況)\s*[：:]\s*(.+?)\s*$/);
       if (head) { if (head[1] === "題") out.title = head[2]; else out.base = head[2].replace(/\.txt$/, ""); return; }
+      // コーナーの見出しのすぐ下の「# 記事：URL」は、そのコーナーで話す記事（アプリの概要に、元の記事へのリンクとして出る）
+      const art = l.match(/^#+\s*記事\s*[：:]\s*(https?:\/\/\S+|articles\/\S+)\s*$/);
+      if (art) {
+        if (topicNow) out.articles[topicNow] = art[1];
+        else errors.push(`${at}: 「# 記事：」は、コーナーの見出し（# コーナー1：…）のすぐ下に書きます`);
+        return;
+      }
       const h = l.match(/^#+\s*コーナー\s*\d*\s*[：:]\s*(.+?)\s*(?:[（(][^）)]*[）)])?\s*$/);
       topicNow = h ? h[1] : null;
       return;
@@ -186,13 +193,38 @@ function build(name) {
   const persona = (() => { try { return readFileSync("character/persona.md", "utf8").trim(); } catch { return ""; } })();
   const edition = name === "main" ? "" : name;
   const key = `${id}_0-${Math.round(covered)}` + (edition ? `_${edition}` : "");
+
+  // コーナーと記事を結ぶ。台本に、元の記事の題とURLを入れる
+  const arts = readArticles();
+  const bare = u => u.replace(/#\d{4}-\d{2}-\d{2}$/, "").replace(/\/$/, "");
+  // 同じ台本の、記録が伸びる前の名前
+  const mine = u => u === key || (u.startsWith(`${id}_0-`) && (edition ? u.endsWith(`_${edition}`) : /^_0-\d+$/.test(u.slice(id.length))));
+  for (const t of topics) {
+    const ref = own.articles[t.title];
+    if (!ref) continue;
+    const a = arts.find(x => ref.startsWith("articles/") ? x.file === ref : bare(x.url) === bare(ref));
+    if (a) { t.url = bare(a.url); t.article = a.title; a.hit = true; }
+    else if (/^https?:/.test(ref)) { t.url = ref; console.log(`「# 記事：${ref}」に当たる記事が articles/ にありません。リンクだけを入れます`); }
+    else console.log(`「# 記事：${ref}」のファイルがありません。リンクは入れていません`);
+  }
+  let sources = [];
+  for (const t of topics) if (t.url && !sources.some(x => x.url === t.url)) sources.push({ title: t.article || t.title, url: t.url });
+  // 「# 記事：」のない台本は、記事の「使った台本:」から拾う
+  if (!sources.length) sources = arts.filter(a => a.used.some(mine) && /^https?:/.test(a.url)).map(a => ({ title: a.title, url: bare(a.url) }));
+  // 話した記事に、この台本の名前を書き込む
+  for (const a of arts) {
+    if (!a.hit || (a.used.includes(key) && a.used.filter(mine).length === 1)) continue;
+    const used = [...a.used.filter(u => u && u !== "（まだ）" && !mine(u)), key];
+    const text = a.text.replace(/^(-\s*使った台本:\s*).*$/m, `$1${used.join("、")}`);
+    if (text !== a.text) { writeFileSync(a.file, text); console.log(`${a.file} の「使った台本:」に ${key} を書きました`); }
+  }
   const now = new Date().toISOString();
   const script = {
     promptVersion: "claude-code-3", generatedAt: now, writer: "claude-code", model: rec.model,
     videoId: id, start: 0, end: covered, covered, ...(edition ? { edition } : {}), ...(own.title ? { title: own.title } : {}),
     viewType: rec.viewType || "pov",
     persona, chatStyle: "podcast", useComments: false, maxReplies: null,
-    meta: rec.meta, chapters: rec.chapters || [], topics, items, comments: []
+    meta: rec.meta, chapters: rec.chapters || [], topics, sources, items, comments: []
   };
   mkdirSync("scripts", { recursive: true });
   const path = `scripts/${key}.json`;
@@ -227,6 +259,16 @@ function build(name) {
   console.log(`書き出しました: ${path}`);
   renameInPlaylists(was, key);
   return true;
+}
+
+// articles/ の記事。題・URL・使った台本
+function readArticles() {
+  if (!existsSync("articles")) return [];
+  return readdirSync("articles").filter(f => f.endsWith(".md")).map(f => {
+    const file = `articles/${f}`, text = readFileSync(file, "utf8");
+    return { file, text, title: (text.match(/^#\s*(.+)$/m) || [])[1]?.trim() || "", url: (text.match(/^-\s*URL:\s*(\S+)/m) || [])[1] || "",
+             used: ((text.match(/^-\s*使った台本:\s*(.*)$/m) || [])[1] || "").split(/[、,\s]+/).filter(Boolean) };
+  });
 }
 
 // プレイリストの中の古い名前を、順番はそのままに新しい名前へ書き換える
