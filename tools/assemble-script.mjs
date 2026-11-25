@@ -23,22 +23,20 @@
 // セリフの前の角かっこは、表情としぐさの印（声には入らない）。表情1つ・しぐさ1つまで:
 //   12:30 雑談 [笑う] それ、わたしもやったことある。
 //   20:10 雑談 [困る][首をかしげる] どっちだったかな。
-//   台本の items に face・gesture として入る（下の FACES・GESTURES）。line には印を入れない
+//   台本の items に face・gesture・marks として入る（marks.mjs）。line には印を入れない
 //
 // 台本のセリフとかぶる base.txt のセリフは、自動で外す（外したものは表示する）。
 // 点検に1つでも引っかかると、台本は書き出さずに終わる（終了コード1）。直してからもう一度実行する。
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, mkdirSync } from "node:fs";
+import { parseMarks } from "./marks.mjs";
 
 const [id, arg] = process.argv.slice(2);
 if (!id) { console.error("使い方: node tools/assemble-script.mjs <動画ID> [台本の名前 | --all | --slots]"); process.exit(1); }
 const CHARS_PER_SEC = 5.5;   // 読み上げの速さの見積もり（ゆっくりめに見ている）
 const MAX_SILENCE = 120;     // これより長い無言は、黙りすぎとみなす（秒）
 const MAX_LINE = 70;         // 1発話の長さの上限（文字）
-// 表情としぐさの印。アプリは右側の名前で受け取る
-const FACES = { "笑う": "smile", "驚く": "surprised", "困る": "troubled", "むっとする": "pout" };
-const GESTURES = { "うなずく": "nod", "首をかしげる": "tilt", "首を振る": "shake", "ちらっと横を見る": "glance" };
-const MARKS = `表情: ${Object.keys(FACES).join("、")}／しぐさ: ${Object.keys(GESTURES).join("、")}`;
+
 
 const rec = JSON.parse(readFileSync(`videos/${id}.json`, "utf8"));
 const covered = rec.covered;
@@ -94,18 +92,11 @@ function readLines(path, errors) {
     if (off) { out.drop.add(sec(off[1])); return; }
     const m = l.match(/^(\d+:\d{2}(?::\d{2})?)\s+(実況|雑談)\s+(.+)$/);
     if (!m) { errors.push(`${at}: 「時刻 実況|雑談 セリフ」の形になっていません → ${l.slice(0, 30)}`); return; }
-    // 先頭の [笑う] [うなずく] などを外して、表情としぐさにする
-    let text = m[3].trim(), face = "", gesture = "";
-    for (let mk; (mk = text.match(/^[\[［]\s*([^\]］]*?)\s*[\]］]\s*/)); text = text.slice(mk[0].length)) {
-      const w = mk[1];
-      if (FACES[w]) { if (face) errors.push(`${at}: 表情の印は1つまでです（${w}）`); face = FACES[w]; }
-      else if (GESTURES[w]) { if (gesture) errors.push(`${at}: しぐさの印は1つまでです（${w}）`); gesture = GESTURES[w]; }
-      else errors.push(`${at}: 「[${w}]」は使えない印です。使える印 → ${MARKS}`);
-    }
-    if (/[\[\]［］]/.test(text)) errors.push(`${at}: 角かっこは、セリフの前の印にだけ使います → ${text.slice(0, 30)}`);
-    if (!text) { errors.push(`${at}: 印のあとにセリフがありません`); return; }
-    out.lines.push({ abs: sec(m[1]), kind: m[2] === "実況" ? "scene" : "chat", line: text, at, topic: topicNow,
-                     ...(face ? { face } : {}), ...(gesture ? { gesture } : {}) });
+    // [笑う] [うなずく] などの印を外して、表情としぐさにする
+    const { line, errors: bad, ...mark } = parseMarks(m[3]);
+    for (const e of bad) errors.push(`${at}: ${e}`);
+    if (!line) { if (!bad.length) errors.push(`${at}: セリフがありません`); return; }
+    out.lines.push({ abs: sec(m[1]), kind: m[2] === "実況" ? "scene" : "chat", line, at, topic: topicNow, ...mark });
   });
   out.lines.sort((a, b) => a.abs - b.abs);
   return out;
@@ -169,9 +160,10 @@ function build(name) {
     if (b.abs - a.abs > MAX_SILENCE)
       errors.push(`${fmt(a.abs)}〜${fmt(b.abs)}: 無言が${b.abs - a.abs}秒続きます（${MAX_SILENCE}秒まで）`);
   }
-  const marked = lines.filter(l => l.face || l.gesture).length;
+  const marked = lines.filter(l => l.face || l.gesture || l.marks).length;
   if (marked) console.log(`表情・しぐさの印: ${marked}件（発話 ${lines.length}件のうち）`);
-  if (marked * 4 > lines.length + 4) console.log(`  印が多めです。目安は、セリフ4〜5本に1つまでです`);
+  if (marked * 4 < lines.length) console.log(`  印が少なめです。目安は、セリフ2本に1つです`);
+  if (marked * 4 > lines.length * 3) console.log(`  印が多めです。目安は、セリフ2本に1つです`);
   if (lines.length && lines[0].abs > 20) errors.push(`最初の発話が ${fmt(lines[0].abs)} です（冒頭20秒以内に導入を入れる）`);
   if (lines.length && covered - lines[lines.length - 1].abs > MAX_SILENCE) errors.push(`最後の発話のあと、終わりまで無言が長すぎます`);
   const seen = new Map();
@@ -196,7 +188,7 @@ function build(name) {
     act: it.act, amount: it.amount || 0, place: it.place || "", abs: it.abs }));
   for (const l of lines) {
     const hit = items.find(x => x.abs === l.abs && !x.line);
-    const mark = { ...(l.face ? { face: l.face } : {}), ...(l.gesture ? { gesture: l.gesture } : {}) };
+    const mark = { ...(l.face ? { face: l.face } : {}), ...(l.gesture ? { gesture: l.gesture } : {}), ...(l.marks ? { marks: l.marks } : {}) };
     if (hit) { hit.line = l.line; hit.kind = l.kind; Object.assign(hit, mark); continue; }
     const prev = [...rec.items].reverse().find(x => x.abs <= l.abs) || rec.items[0];
     items.push({ t: fmt(l.abs), scene: prev?.scene || "", line: l.line, kind: l.kind,

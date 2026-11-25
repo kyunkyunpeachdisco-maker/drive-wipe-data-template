@@ -14,11 +14,8 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { parseMarks } from "./marks.mjs";
 
-const FACES = { "笑う": "smile", "驚く": "surprised", "困る": "troubled", "むっとする": "pout" };
-const GESTURES = { "うなずく": "nod", "首をかしげる": "tilt", "首を振る": "shake", "ちらっと横を見る": "glance" };
-const HANDS = { "手を振る": "wave", "片手を上げる": "raise", "指をさす": "point" };
-const MARKS = `表情: ${Object.keys(FACES).join("、")}／しぐさ: ${Object.keys(GESTURES).join("、")}／手: ${Object.keys(HANDS).join("、")}`;
 const WHEN = { "出発前": "start", "途中": "mid", "いつでも": "any", "行こう": "go", "戻ろう": "back" };
 const CHARS_PER_SEC = 5.5;      // 声の速さの目安
 const MIN_SEC = 6, MAX_SEC = 22;
@@ -72,20 +69,12 @@ for (const f of readdirSync("talks").filter(f => f.endsWith(".txt")).sort()) {
       return;
     }
     if (!cur) { errors.push(`${at}: 先に「# 話：題」を書きます`); return; }
-    let text = l, face = "", gesture = "", hand = "";
-    for (let m; (m = text.match(/^\[([^\]]*)\]\s*/)); text = text.slice(m[0].length)) {
-      const w = m[1].trim();
-      const put = (now, v, what) => { if (now) errors.push(`${at}: ${what}の印は1つまでです（${w}）`); return v; };
-      if (FACES[w]) face = put(face, FACES[w], "表情");
-      else if (GESTURES[w]) gesture = put(gesture, GESTURES[w], "しぐさ");
-      else if (HANDS[w]) hand = put(hand, HANDS[w], "手");
-      else errors.push(`${at}: 使えない印です（${w || "空"}）。使えるのは ${MARKS}`);
-    }
-    if (/[[\]]/.test(text)) errors.push(`${at}: 角かっこは、セリフの前にだけ書けます`);
-    if (!text) { errors.push(`${at}: セリフがありません`); return; }
+    const { line: text, errors: bad, ...mark } = parseMarks(l, { hands: true });
+    for (const e of bad) errors.push(`${at}: ${e}`);
+    if (!text) { if (!bad.length) errors.push(`${at}: セリフがありません`); return; }
     if (text.length > 70) errors.push(`${at}: 1つのセリフは70字までです（${text.length}字）`);
     if (/https?:\/\//.test(text)) errors.push(`${at}: セリフに URL を書かない`);
-    cur.lines.push({ line: text, ...(face ? { face } : {}), ...(gesture ? { gesture } : {}), ...(hand ? { hand } : {}) });
+    cur.lines.push({ line: text, ...mark });
   });
 }
 
