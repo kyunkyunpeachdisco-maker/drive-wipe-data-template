@@ -14,6 +14,7 @@
 //   MINUTES          任意。記録する長さの上限（分）。無ければ動画の最後まで
 //
 // 出力: videos/<videoId>.json（1区間ごとに保存するので、枠切れで止まっても続きから再開できる）
+// 終了コード: 0=済み 1=失敗（やり直せば成功しうる） 2=対象外の動画 3=途中まで 6=何度やっても成功しない
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 
@@ -65,6 +66,17 @@ function writeCandidates(heading, rows) {
   writeFileSync("videos/candidates.md", body);
   console.log(body);
 }
+// 候補を出せないときも、次にどうすればよいかを残して、依頼は済みにする
+function noCandidates(reason) {
+  mkdirSync("videos", { recursive: true });
+  const body = `# 動画の候補\n\n${reason}（${new Date().toISOString().slice(0, 10)}）。\n\n`
+    + `videos/request.txt に「候補 北海道 海沿い」のように、（別の）キーワードを付けて書くと、キーワードで探します。\n`;
+  writeFileSync("videos/candidates.md", body);
+  console.log(body);
+  process.exit(0);
+}
+// 何度やっても成功しない依頼。呼び出し側は、依頼を残さない
+function giveUp(reason) { console.error(reason); process.exit(6); }
 const listJson = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith(".json") && f !== "_index.json") : [];
 
 /* ---------- Gemini ---------- */
@@ -107,7 +119,11 @@ const geminiText = d => (d?.candidates?.[0]?.content?.parts || []).map(p => p.te
 async function yt(path, params) {
   const q = new URLSearchParams({ ...params, key: YT_KEY });
   const res = await fetch(`https://www.googleapis.com/youtube/v3/${path}?${q}`);
-  if (!res.ok) throw new Error(`YouTube API ${res.status}: ${(await res.json().catch(() => null))?.error?.message || ""}`);
+  if (!res.ok) {
+    const err = new Error(`YouTube API ${res.status}: ${(await res.json().catch(() => null))?.error?.message || ""}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 const iso8601 = d => { // PT1H2M3S → 秒
@@ -135,22 +151,25 @@ function findIncomplete() {
 async function pickVideo() {
   const url = (process.env.VIDEO_URL || "").trim();
   if (url) {
-    const id = (url.match(/[?&]v=([\w-]{11})/) || url.match(/youtu\.be\/([\w-]{11})/) || [])[1];
-    if (!id) throw new Error("VIDEO_URL から動画IDを読み取れませんでした: " + url);
+    const id = (url.match(/(?:[?&]v=|youtu\.be\/|\/(?:shorts|embed|live)\/)([\w-]{11})/) || [])[1];
+    if (!id) giveUp("動画のURLとして読み取れませんでした: " + url);
     return id;
   }
   const done = doneVideoIds();
   const query = (process.env.QUERY || "").trim();
+  const listOnly = process.env.LIST_ONLY === "true";
   if (query) {
     const sr = await yt("search", { part: "snippet", q: query + " ドライブ 車載", type: "video",
       videoDuration: "long", videoEmbeddable: "true", maxResults: "10" });
     const ids = sr.items.map(x => x.id.videoId).filter(id => id && !done.has(id));
+    if (!ids.length && listOnly) noCandidates(`「${query}」では、候補が見つかりませんでした`);
     if (!ids.length) throw new Error("検索で候補が見つかりませんでした: " + query);
     const vs = await yt("videos", { part: "contentDetails", id: ids.join(",") });
     const len = new Map(vs.items.map(x => [x.id, iso8601(x.contentDetails.duration)]));
     const okIds = ids.filter(id => (len.get(id) || 0) >= 480);
+    if (!okIds.length && listOnly) noCandidates(`「${query}」で見つかった動画は、どれも短すぎました（8分未満）`);
     if (!okIds.length) throw new Error("検索候補がすべて短すぎました: " + query);
-    if (process.env.LIST_ONLY === "true") {
+    if (listOnly) {
       const titles = new Map(sr.items.map(x => [x.id.videoId, x.snippet.title]));
       writeCandidates(`「${query}」で探した候補`, okIds.map(id => ({ id, len: len.get(id), title: titles.get(id) || "" })));
       process.exit(0);
@@ -161,15 +180,17 @@ async function pickVideo() {
     console.log(`検索で選択: ${hit}（${fmtTime(len.get(hit))}）`);
     return hit;
   }
+  if (!done.size && listOnly) noCandidates("まだ記録した動画がないので、前に使ったチャンネルからは選べません");
   if (!done.size) throw new Error("過去の動画がないため自動では選べません。VIDEO_URL を指定してください。");
   const seed = await yt("videos", { part: "snippet", id: [...done].slice(0, 20).join(",") });
   const channels = [...new Set(seed.items.map(x => x.snippet.channelId))];
-  const listOnly = process.env.LIST_ONLY === "true", found = [];
+  const found = [];
   for (const ch of channels) {
     const cd = await yt("channels", { part: "contentDetails", id: ch });
     const uploads = cd.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
     if (!uploads) continue;
-    const pl = await yt("playlistItems", { part: "contentDetails", playlistId: uploads, maxResults: "20" });
+    const pl = await yt("playlistItems", { part: "contentDetails", playlistId: uploads, maxResults: "20" })
+      .catch(e => { if (e.status === 404) return { items: [] }; throw e; });   // 動画が1本も残っていないチャンネル
     const ids = pl.items.map(x => x.contentDetails.videoId).filter(id => !done.has(id));
     if (!ids.length) continue;
     // 8分未満は除く。90分を超える長編も自動では選ばない
@@ -186,7 +207,7 @@ async function pickVideo() {
     if (hit) return hit;
   }
   if (listOnly) {
-    if (!found.length) throw new Error("前に使ったチャンネルに、まだ見ていない新着がありませんでした。");
+    if (!found.length) noCandidates("前に使ったチャンネルに、まだ見ていない新着がありませんでした");
     writeCandidates("前に使ったチャンネルの新着", found.slice(0, 20));
     process.exit(0);
   }
@@ -252,7 +273,7 @@ ${context ? `\n# 直前の区間までの流れ\n${context}\n` : ""}
 }
 
 /* ---------- 本体 ---------- */
-const incomplete = (process.env.VIDEO_URL || "").trim() ? null : findIncomplete();
+const incomplete = (process.env.VIDEO_URL || "").trim() || process.env.LIST_ONLY === "true" ? null : findIncomplete();
 const videoId = incomplete ? incomplete.videoId : await pickVideo();
 const path = `videos/${videoId}.json`;
 const prev = incomplete || readJson(path);
@@ -260,8 +281,9 @@ if (incomplete) console.log(`記録が途中の動画の続きから始めます
 console.log("対象動画: https://www.youtube.com/watch?v=" + videoId);
 
 const v = (await yt("videos", { part: "snippet,contentDetails", id: videoId })).items?.[0];
-if (!v) throw new Error("動画情報を取得できませんでした");
+if (!v) giveUp("動画の情報がありません（削除されたか、非公開か、URLが違います）");
 const duration = iso8601(v.contentDetails.duration);
+if (!duration) giveUp("動画の長さがまだ決まっていません（生配信の前か途中）。配信が終わってから頼み直してください");
 const meta = {
   title: v.snippet.title, channelTitle: v.snippet.channelTitle,
   tags: (v.snippet.tags || []).slice(0, 10),

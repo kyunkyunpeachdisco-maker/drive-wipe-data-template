@@ -7,6 +7,7 @@
 //             lines/<動画ID>/base.txt（実況と、記事に関係しないひとこと。その動画の台本すべてで使い回す）
 //             lines/<動画ID>/<台本の名前>.txt（その台本だけのセリフ。記事のコーナー、入り、締めなど）
 //   作るもの: scripts/<動画ID>_0-<記録の長さ>_<台本の名前>.json と scripts/_index.json の追記
+//             記録が伸びて台本の名前が変わったときは、playlists.json の中の名前も書き換える
 //             台本の名前が main のときだけ、後ろに名前を付けない
 //   lines/<動画ID>.txt が1つだけある前の形（実況と雑談が混ざったもの）も、そのまま組み立てられる
 //
@@ -206,21 +207,43 @@ function build(name) {
   writeFileSync(path, JSON.stringify(script, null, 2) + "\n");
   // 記録が伸びて名前が変わったら、同じ台本の古いものは片づける（音声は本文のハッシュで紐づくので作り直しにならない）
   let before = index[key];
+  const was = new Set(index[key]?.was || []);   // 前の名前。アプリは、この名前で残した視聴の記録を引き継ぐ
   for (const k of Object.keys(index)) {
     const v = index[k];
     if (k === key || v.videoId !== id || v.writer !== "claude-code" || (v.edition || "") !== edition) continue;
     before = before || v;
+    for (const old of [...(v.was || []), k]) was.add(old);
     delete index[k];
     if (existsSync(`scripts/${k}.json`)) unlinkSync(`scripts/${k}.json`);
     console.log(`記録が伸びたので、古い台本 ${k} を ${key} に置き換えました`);
   }
+  was.delete(key);
   index[key] = { label: before?.label || rec.meta?.title || key, videoId: id, start: 0, end: covered,
                  savedAt, fav: before?.fav || false, writer: "claude-code",
                  ...(edition ? { edition } : {}), ...(own.title ? { title: own.title } : {}),
-                 videoTitle: rec.meta?.title || "", channel: rec.meta?.channelTitle || "", topics: topics.map(t => t.title) };
+                 videoTitle: rec.meta?.title || "", channel: rec.meta?.channelTitle || "", topics: topics.map(t => t.title),
+                 ...(was.size ? { was: [...was] } : {}) };
   writeFileSync("scripts/_index.json", JSON.stringify(index, null, 2) + "\n");
   console.log(`書き出しました: ${path}`);
+  renameInPlaylists(was, key);
   return true;
+}
+
+// プレイリストの中の古い名前を、順番はそのままに新しい名前へ書き換える
+function renameInPlaylists(was, key) {
+  if (!was.size || !existsSync("playlists.json")) return;
+  let d;
+  try { d = JSON.parse(readFileSync("playlists.json", "utf8")); }
+  catch { console.error("playlists.json を読めないので、プレイリストの中の名前は直していません"); return; }
+  let n = 0;
+  for (const l of Array.isArray(d?.lists) ? d.lists : []) {
+    if (!Array.isArray(l?.items) || !l.items.some(k => was.has(k))) continue;
+    l.items = [...new Set(l.items.map(k => was.has(k) ? key : k))];
+    n++;
+  }
+  if (!n) return;
+  writeFileSync("playlists.json", JSON.stringify(d, null, 2) + "\n");
+  console.log(`playlists.json の ${n}つのプレイリストで、台本の名前を ${key} に直しました（一緒に保存してください）`);
 }
 
 // 静かな区間（mood が quiet か stop）のつながりを並べる。雑談はここに置く
