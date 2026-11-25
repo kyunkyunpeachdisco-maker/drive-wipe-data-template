@@ -199,7 +199,7 @@ function build(name) {
     act: it.act, amount: it.amount || 0, place: it.place || "", abs: it.abs }));
   for (const l of lines) {
     const hit = items.find(x => x.abs === l.abs && !x.line);
-    const mark = { ...(l.face ? { face: l.face } : {}), ...(l.gesture ? { gesture: l.gesture } : {}), ...(l.marks ? { marks: l.marks } : {}), ...(l.follow ? { follow: true } : {}) };
+    const mark = { ...(l.face ? { face: l.face } : {}), ...(l.gesture ? { gesture: l.gesture } : {}), ...(l.marks ? { marks: l.marks } : {}), ...(l.follow ? { follow: true } : {}), ...(l.say ? { say: l.say } : {}) };
     if (hit) { hit.line = l.line; hit.kind = l.kind; Object.assign(hit, mark); continue; }
     const prev = [...rec.items].reverse().find(x => x.abs <= l.abs) || rec.items[0];
     items.push({ t: fmt(l.abs), scene: prev?.scene || "", line: l.line, kind: l.kind,
