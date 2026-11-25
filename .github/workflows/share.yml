@@ -1,0 +1,62 @@
+name: share
+
+# URL で見せる台本を、GitHub Pages に出す。リポジトリは非公開のままで、share/list.txt に書いた台本だけが公開される。
+#   - share/list.txt に、見せる台本の名前（scripts/ のファイル名から .json を除いたもの）を1行に1つ書く
+#   - 名前を消すと、その台本は公開されなくなる
+# 公開されるもの: 台本のセリフ、声、話した記事の題とURL、アバター（モデルは、再配布が許されているときだけ）
+# 先に1回だけ、リポジトリの Settings → Pages で、Source を「GitHub Actions」にしておく。
+# 処理の中身は tools/build-share.mjs（道具の更新で新しくなる）
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'share/list.txt'
+      - 'scripts/**'
+  workflow_run:
+    workflows: [make-audio]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: share
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 2
+      - name: 見せる台本があるか確かめる
+        id: check
+        run: |
+          # 1本も見せていないリポジトリでは、何もしない（Pages を使っていない人のところで失敗させない）
+          n=$(grep -v '^\s*#' share/list.txt 2>/dev/null | grep -c '\S' || true)
+          changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -cx 'share/list.txt' || true)
+          echo "見せる台本: ${n}本"
+          if [ "$n" != "0" ] || [ "$changed" != "0" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.go == '1'
+        with:
+          node-version: 20
+      - name: 公開用のファイルを作る
+        if: steps.check.outputs.go == '1'
+        run: node tools/build-share.mjs _site
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.check.outputs.go == '1'
+        with:
+          path: _site
+      - id: deploy
+        if: steps.check.outputs.go == '1'
+        uses: actions/deploy-pages@v5
