@@ -6,6 +6,7 @@
 //   Actions の share.yml が、作ったフォルダを GitHub Pages に出す。リポジトリそのものは非公開のまま。
 //
 // 公開されるのは、share/list.txt に書いた台本と、その声、話した記事の題とURL、アバターだけ。
+// 広告のあいだの小話も、少し入れる（共有している動画の話と、新しいものから）。
 // 映像の記録（scene）・人物像（persona）・記事の本文は入れない。
 // アバターのモデルは、VRM の中に「再配布してよい」と書かれているときだけ入れる。
 
@@ -68,6 +69,24 @@ for (const key of keys) {
   }));
   items.push({ key, videoId: s.videoId, label: info.label || s.meta?.title || key, title: s.title || "", end: s.covered ?? s.end, topics: (s.topics || []).map(t => t.title) });
   console.log(`入れました: ${key}（声 ${voice ? voice.count + "件・" + voice.name : "なし"}／記事 ${sources.length}本）`);
+}
+
+// 広告のあいだの小話。共有している動画の話と、いつでも使える話・記事の話の新しいものから
+const all = json("talks/index.json")?.talks || [];
+const vids = new Set(items.map(i => i.videoId));
+const newest = kind => all.filter(t => t.kind === kind && t.when !== "go" && t.when !== "back").sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 10);
+const talks = items.length ? [...new Set([...all.filter(t => t.kind === "video" ? vids.has(t.videoId) : t.when === "go" || t.when === "back"), ...newest("any"), ...newest("article")])] : [];
+if (talks.length) {
+  put(`${out}/talks.json`, JSON.stringify({ version: 1, talks }));
+  const take = pickVoice("talks");
+  if (take) {
+    const meta = json(`audio/talks/${take}/index.json`), want = new Set(talks.flatMap(t => t.lines.map(l => l.line)));
+    const use = (meta?.items || []).filter(it => want.has(it.text) && /^[0-9a-f]{6,64}$/.test(it.h) && /^[a-z0-9]{2,5}$/.test(it.ext || "") && existsSync(`audio/talks/${take}/${it.h}.${it.ext}`));
+    mkdirSync(`${out}/audio/talks`, { recursive: true });
+    for (const it of use) copyFileSync(`audio/talks/${take}/${it.h}.${it.ext}`, `${out}/audio/talks/${it.h}.${it.ext}`);
+    put(`${out}/audio/talks/index.json`, JSON.stringify({ engine: meta.engine || "", name: meta.voiceName || "", items: use.map(({ h, ext, enc, rate }) => ({ h, ext, enc, rate })) }));
+  }
+  console.log(`小話を入れました: ${talks.length}本`);
 }
 
 // アバター。調整値は player- で始まるものだけ。モデルは、再配布が許されているときだけ

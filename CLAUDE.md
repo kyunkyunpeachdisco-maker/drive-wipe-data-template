@@ -27,6 +27,7 @@
 - `scripts/_index.json` … 台本の一覧（アプリの表示名・お気に入り）
 - `playlists.json` … アプリのプレイリスト
 - `share/list.txt` … URL で見せる台本の名前（1行に1つ）。ここに書いた台本だけが、`tools/build-share.mjs` と `.github/workflows/share.yml` で公開される。リポジトリそのものは非公開のまま
+- `talks/*.txt` … 広告のあいだに話す小話。`node tools/assemble-talks.mjs` で `talks/index.json` にまとめる。声は `audio/talks/`
 - `character/persona.md` … キャラクター設定。セリフを書くときの人物像
 - `character/interests.md` … 興味・関心。雑談の引き出し
 - `character/feeds.md` … 記事を取り込むフィード（RSS/Atom）や一覧ページのURL。1行に1つ

@@ -30,7 +30,10 @@ if (process.argv[2] === "--voices") {
 const [key, speakerId, engineUrl = "http://127.0.0.1:50021"] = process.argv.slice(2);
 if (!key || !speakerId) { console.error("使い方: node tools/make-audio.mjs <台本の名前> <話者ID> [エンジンURL]"); process.exit(1); }
 
-const script = JSON.parse(readFileSync(`scripts/${key}.json`, "utf8"));
+// talks は、広告のあいだに話す小話（talks/index.json）。台本と同じに扱う
+const script = key === "talks"
+  ? { meta: { title: "広告のあいだの小話" }, items: JSON.parse(readFileSync("talks/index.json", "utf8")).talks.flatMap(t => t.lines) }
+  : JSON.parse(readFileSync(`scripts/${key}.json`, "utf8"));
 const lines = [...new Set(script.items.filter(it => it.line).map(it => it.line))];
 const hash12 = text => createHash("sha256").update(text, "utf8").digest("hex").slice(0, 12);
 
