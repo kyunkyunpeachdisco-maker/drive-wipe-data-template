@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 台本の音声を VOICEVOX で作って、台本1本ごとに audio/ に保存する（Actions の make-audio から呼ばれる）。
 # 対象は環境変数 KEY（と VOICE）か、なければ audio/request.txt の「台本の名前 [話者ID]」。
+# 動くたびに、選べる声の一覧を audio/voices.json に書く。request.txt に「声の一覧」とだけ書けば、一覧だけを作る。
 set -u
 . tools/git-save.sh
 
@@ -30,9 +31,13 @@ docker run -d --name vv -p 50021:50021 voicevox/voicevox_engine:cpu-latest >/dev
 for i in $(seq 90); do curl -sf http://127.0.0.1:50021/version >/dev/null && break; sleep 5; done
 curl -sf http://127.0.0.1:50021/version >/dev/null || { echo "VOICEVOXが起動しませんでした"; docker logs vv | tail -20; exit 1; }
 
+voices() { node tools/make-audio.mjs --voices; }
+voices && save_work "更新: 声の一覧" voices audio || echo "声の一覧を保存できませんでした（声づくりは続けます）"
+
 failed=0
 for job in "${jobs[@]}"; do
   read -r k v <<< "$job"
+  [ "$k" = "声の一覧" ] && continue
   [ -f "scripts/$k.json" ] || { echo "台本がありません: $k"; continue; }
   remake || { echo "音声を作れませんでした: $k"; failed=1; }
   # ぶつかったときは、最新の台本で作り直す（できている音声はそのまま使われ、一覧だけ新しくなる）

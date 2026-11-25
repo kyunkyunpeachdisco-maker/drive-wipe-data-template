@@ -4,6 +4,8 @@
 //   例:   node tools/make-audio.mjs BvjXJuwZZTg_0-3399 8
 //   ふだんは Actions（.github/workflows/make-audio.yml）が、台本が保存されるたびに実行する。
 //   PCで手元のVOICEVOXを使うこともできる（起動してから実行する）。
+//         node tools/make-audio.mjs --voices [エンジンURL]
+//   選べる声の一覧（話者IDと名前）を audio/voices.json に書く。アプリの設定の画面と、AIエージェントが読む。
 //
 // - すでにある音声は作り直さない（ファイル名が本文のハッシュなので、書き換えた発話だけ作る）
 // - 同じ声・同じセリフの音声がほかの台本にあれば、作らずに写す（同じ動画の台本を作り足したときの実況など）
@@ -13,6 +15,18 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, copyFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
+if (process.argv[2] === "--voices") {
+  const url = process.argv[3] || "http://127.0.0.1:50021";
+  const voices = [];
+  for (const sp of await (await fetch(`${url}/speakers`)).json())
+    for (const st of sp.styles || []) voices.push({ id: st.id, name: `${sp.name}（${st.name}）`, speaker: sp.name, style: st.name });
+  voices.sort((a, b) => a.id - b.id);
+  mkdirSync("audio", { recursive: true });
+  // 1行に1つ。差分が読みやすく、AIエージェントが名前で探しやすい
+  writeFileSync("audio/voices.json", `{\n  "voices": [\n${voices.map(v => "    " + JSON.stringify(v)).join(",\n")}\n  ]\n}\n`);
+  console.log(`声の一覧を書きました: ${voices.length}件`);
+  process.exit(0);
+}
 const [key, speakerId, engineUrl = "http://127.0.0.1:50021"] = process.argv.slice(2);
 if (!key || !speakerId) { console.error("使い方: node tools/make-audio.mjs <台本の名前> <話者ID> [エンジンURL]"); process.exit(1); }
 

@@ -63,7 +63,8 @@ for (const key of keys) {
     meta: { title: s.meta?.title || "", channelTitle: s.meta?.channelTitle || "", duration: s.meta?.duration || 0 },
     generatedAt: s.generatedAt || "", chapters: s.chapters || [],
     topics: (s.topics || []).map(({ title, start, end, url, article }) => ({ title, start, end, ...(ok({ url }) ? { url, article: String(article || "") } : {}) })), sources, voice,
-    items: s.items.map(({ t, abs, line, kind, act, amount, place }) => ({ t, abs, line, kind, act, amount, place })),
+    items: s.items.map(({ t, abs, line, kind, act, amount, place, face, gesture }) =>
+      ({ t, abs, line, kind, act, amount, place, ...(face ? { face } : {}), ...(gesture ? { gesture } : {}) })),
   }));
   items.push({ key, videoId: s.videoId, label: info.label || s.meta?.title || key, title: s.title || "", end: s.covered ?? s.end, topics: (s.topics || []).map(t => t.title) });
   console.log(`入れました: ${key}（声 ${voice ? voice.count + "件・" + voice.name : "なし"}／記事 ${sources.length}本）`);
