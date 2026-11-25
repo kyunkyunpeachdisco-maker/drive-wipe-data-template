@@ -26,6 +26,7 @@
 - `scripts/<動画ID>_<開始>-<終了>_<台本の名前>.json` … 台本。アプリが読む。`lines/` から組み立てたもの（名前が `main` のときは、後ろに名前が付かない）
 - `scripts/_index.json` … 台本の一覧（アプリの表示名・お気に入り）
 - `playlists.json` … アプリのプレイリスト
+- `share/list.txt` … URL で見せる台本の名前（1行に1つ）。ここに書いた台本だけが、`tools/build-share.mjs` と `.github/workflows/share.yml` で公開される。リポジトリそのものは非公開のまま
 - `character/persona.md` … キャラクター設定。セリフを書くときの人物像
 - `character/interests.md` … 興味・関心。雑談の引き出し
 - `character/feeds.md` … 記事を取り込むフィード（RSS/Atom）や一覧ページのURL。1行に1つ

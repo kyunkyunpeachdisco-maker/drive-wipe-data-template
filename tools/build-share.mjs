@@ -1,0 +1,99 @@
+// URL で見せる台本の、公開用のファイルを作る（Node / 依存なし）
+//
+// 使い方: node tools/build-share.mjs <出力先のフォルダ>
+//   読むもの: share/list.txt（見せる台本の名前を1行に1つ）、scripts/ audio/ articles/ avatar/
+//   作るもの: <出力先>/index.json・scripts/<名前>.json・audio/<名前>/…・avatar/…
+//   Actions の share.yml が、作ったフォルダを GitHub Pages に出す。リポジトリそのものは非公開のまま。
+//
+// 公開されるのは、share/list.txt に書いた台本と、その声、話した記事の題とURL、アバターだけ。
+// 映像の記録（scene）・人物像（persona）・記事の本文は入れない。
+// アバターのモデルは、VRM の中に「再配布してよい」と書かれているときだけ入れる。
+
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
+
+const out = process.argv[2];
+if (!out) { console.error("使い方: node tools/build-share.mjs <出力先のフォルダ>"); process.exit(1); }
+const readSafe = p => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const json = p => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+const put = (p, data) => { mkdirSync(p.replace(/\/[^/]*$/, ""), { recursive: true }); writeFileSync(p, data); };
+
+const keys = [...new Set(readSafe("share/list.txt").split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#")))];
+const index = json("scripts/_index.json") || {};
+const settings = json("avatar/settings.json") || {};
+
+// 話した記事（articles/ の「使った台本:」に、この台本の名前があるもの）
+const articles = existsSync("articles") ? readdirSync("articles").filter(f => f.endsWith(".md")).map(f => {
+  const t = readSafe(`articles/${f}`);
+  return { title: (t.match(/^#\s*(.+)$/m) || [])[1] || "", url: ((t.match(/^-\s*URL:\s*(\S+)/m) || [])[1] || "").replace(/#\d{4}-\d{2}-\d{2}$/, ""),
+           used: ((t.match(/^-\s*使った台本:\s*(.*)$/m) || [])[1] || "").split(/[、,\s]+/) };
+}) : [];
+
+// 声：アプリで選んでいる声（VOICEVOX）があればそれ、なければフォルダ名の降順で最初のもの
+function pickVoice(key) {
+  const dir = `audio/${key}`;
+  if (!existsSync(dir)) return null;
+  const takes = readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(`${dir}/${d.name}/index.json`)).map(d => d.name).sort().reverse();
+  const want = `voicevox-${settings["player-voice-voicevox"] || ""}`;
+  return takes.find(t => t === want || t.startsWith(want + "_")) || takes[0] || null;
+}
+
+const items = [];
+for (const key of keys) {
+  if (!/^[\w-]{1,80}$/.test(key)) { console.log(`名前の形が違うので飛ばします: ${key}`); continue; }
+  const s = json(`scripts/${key}.json`);
+  if (!s) { console.log(`台本が見つからないので飛ばします: ${key}`); continue; }
+  const info = index[key] || {};
+  const sources = articles.filter(a => a.used.includes(key) && /^https?:\/\//.test(a.url)).map(a => ({ title: a.title, url: a.url }));
+  let voice = null;
+  const take = pickVoice(key);
+  if (take) {
+    const meta = json(`audio/${key}/${take}/index.json`);
+    const lines = new Set(s.items.filter(it => it.line).map(it => it.line));
+    const use = (meta?.items || []).filter(it => lines.has(it.text) && /^[0-9a-f]{6,64}$/.test(it.h) && /^[a-z0-9]{2,5}$/.test(it.ext || "") && existsSync(`audio/${key}/${take}/${it.h}.${it.ext}`));
+    for (const it of use) { mkdirSync(`${out}/audio/${key}`, { recursive: true }); copyFileSync(`audio/${key}/${take}/${it.h}.${it.ext}`, `${out}/audio/${key}/${it.h}.${it.ext}`); }
+    voice = { engine: meta.engine || "", name: meta.voiceName || meta.label || "", count: use.length };
+    put(`${out}/audio/${key}/index.json`, JSON.stringify({ ...voice, items: use.map(({ h, ext, enc, rate }) => ({ h, ext, enc, rate })) }));
+  }
+  // アプリが再生に使うものだけを写す
+  put(`${out}/scripts/${key}.json`, JSON.stringify({
+    videoId: s.videoId, start: s.start || 0, end: s.end, covered: s.covered, ...(s.edition ? { edition: s.edition } : {}), ...(s.title ? { title: s.title } : {}),
+    meta: { title: s.meta?.title || "", channelTitle: s.meta?.channelTitle || "", duration: s.meta?.duration || 0 },
+    topics: s.topics || [], sources, voice,
+    items: s.items.map(({ t, abs, line, kind, act, amount, place }) => ({ t, abs, line, kind, act, amount, place })),
+  }));
+  items.push({ key, videoId: s.videoId, label: info.label || s.meta?.title || key, title: s.title || "", end: s.covered ?? s.end, topics: (s.topics || []).map(t => t.title) });
+  console.log(`入れました: ${key}（声 ${voice ? voice.count + "件・" + voice.name : "なし"}／記事 ${sources.length}本）`);
+}
+
+// アバター。調整値は player- で始まるものだけ。モデルは、再配布が許されているときだけ
+const avatar = { settings: false, vrm: false };
+if (items.length) {
+  const mine = Object.fromEntries(Object.entries(settings).filter(([k, v]) => k.startsWith("player-") && typeof v === "string" && v.length < 200));
+  if (Object.keys(mine).length) { put(`${out}/avatar/settings.json`, JSON.stringify(mine)); avatar.settings = true; }
+  if (existsSync("avatar/model.vrm")) {
+    const why = vrmCanShare(readFileSync("avatar/model.vrm"));
+    if (why === true) { mkdirSync(`${out}/avatar`, { recursive: true }); copyFileSync("avatar/model.vrm", `${out}/avatar/model.vrm`); avatar.vrm = true; }
+    else console.log(`アバターのモデルは入れません（${why}）。見る人には、簡単な絵の顔で出ます。`);
+  }
+}
+put(`${out}/index.json`, JSON.stringify({ version: 1, items, avatar }));
+put(`${out}/index.html`, `<!doctype html><meta charset="utf-8"><title>ドライブ実況ワイプ</title><p>ドライブ実況ワイプで公開している台本の置き場です。</p>`);
+console.log(`公開する台本: ${items.length}本`);
+
+// VRM の中の利用条件を読む。再配布してよいと読み取れたときだけ true。そうでなければ理由の文
+function vrmCanShare(buf) {
+  try {
+    if (buf.toString("latin1", 0, 4) !== "glTF") return "VRM の形で読めません";
+    const len = buf.readUInt32LE(12);
+    const ext = JSON.parse(buf.toString("utf8", 20, 20 + len)).extensions || {};
+    const m1 = ext.VRMC_vrm?.meta, m0 = ext.VRM?.meta;
+    if (m1) return m1.allowRedistribution === true ? true : "モデルの利用条件で、再配布が許されていません";
+    if (m0) {
+      const urls = `${m0.otherLicenseUrl || ""} ${m0.otherPermissionUrl || ""}`;
+      if (/[?&]redistribution=allow(&|$|\s)/.test(urls)) return true;
+      if (["CC0", "CC_BY", "CC_BY_NC", "CC_BY_SA", "CC_BY_NC_SA"].includes(m0.licenseName)) return true;
+      return "モデルの利用条件から、再配布してよいと読み取れません";
+    }
+    return "モデルに利用条件が書かれていません";
+  } catch (e) { return "モデルの利用条件を読めません"; }
+}
