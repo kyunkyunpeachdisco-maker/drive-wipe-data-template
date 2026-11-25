@@ -11,6 +11,8 @@
 // アバターのモデルは、VRM の中に「再配布してよい」と書かれているときだけ入れる。
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 const out = process.argv[2];
 if (!out) { console.error("使い方: node tools/build-share.mjs <出力先のフォルダ>"); process.exit(1); }
@@ -67,8 +69,8 @@ for (const key of keys) {
     meta: { title: s.meta?.title || "", channelTitle: s.meta?.channelTitle || "", duration: s.meta?.duration || 0 },
     generatedAt: dayOf(s.generatedAt), chapters: s.chapters || [],
     topics: (s.topics || []).map(({ title, start, end, url, article }) => ({ title, start, end, ...(ok({ url }) ? { url, article: String(article || "") } : {}) })), sources, voice,
-    items: s.items.map(({ t, abs, line, kind, act, amount, place, face, gesture, marks }) =>
-      ({ t, abs, line, kind, act, amount, place, ...(face ? { face } : {}), ...(gesture ? { gesture } : {}), ...(Array.isArray(marks) ? { marks } : {}) })),
+    items: s.items.map(({ t, abs, line, kind, act, amount, place, face, gesture, marks, follow }) =>
+      ({ t, abs, line, kind, act, amount, place, ...(face ? { face } : {}), ...(gesture ? { gesture } : {}), ...(Array.isArray(marks) ? { marks } : {}), ...(follow ? { follow: true } : {}) })),
   }));
   items.push({ key, videoId: s.videoId, label: info.label || s.meta?.title || key, title: s.title || "", end: s.covered ?? s.end, topics: (s.topics || []).map(t => t.title) });
   console.log(`入れました: ${key}（声 ${voice ? voice.count + "件・" + voice.name : "なし"}／記事 ${sources.length}本）`);
@@ -99,13 +101,29 @@ if (items.length) {
   if (Object.keys(mine).length) { put(`${out}/avatar/settings.json`, JSON.stringify(mine)); avatar.settings = true; }
   if (existsSync("avatar/model.vrm")) {
     const why = vrmCanShare(readFileSync("avatar/model.vrm"));
-    if (why === true) { mkdirSync(`${out}/avatar`, { recursive: true }); copyFileSync("avatar/model.vrm", `${out}/avatar/model.vrm`); avatar.vrm = true; }
+    if (why === true) {
+      // 中身が変わったときだけ名前が変わるので、見る人の端末に取っておける
+      const name = `model-${createHash("sha256").update(readFileSync("avatar/model.vrm")).digest("hex").slice(0, 10)}.vrm`;
+      mkdirSync(`${out}/avatar`, { recursive: true });
+      if (!lighten("avatar/model.vrm", `${out}/avatar/${name}`)) copyFileSync("avatar/model.vrm", `${out}/avatar/${name}`);
+      avatar.vrm = true; avatar.vrmFile = name;
+    }
     else console.log(`アバターのモデルは入れません（${why}）。見る人には、簡単な絵の顔で出ます。`);
   }
 }
 put(`${out}/index.json`, JSON.stringify({ version: 1, items, avatar }));
 put(`${out}/index.html`, `<!doctype html><meta charset="utf-8"><title>ドライブ実況ワイプ</title><p>ドライブ実況ワイプで公開している台本の置き場です。</p>`);
 console.log(`公開する台本: ${items.length}本`);
+
+// 絵を縮めた軽いモデルを作る。Python と Pillow が使えないときは false（元のまま公開する）
+function lighten(from, to) {
+  const py = ["python3", "python"].find(c => spawnSync(c, ["--version"]).status === 0);
+  if (!py) return false;
+  if (spawnSync(py, ["-c", "import PIL"]).status !== 0) spawnSync(py, ["-m", "pip", "install", "--quiet", "--user", "--break-system-packages", "pillow"]);
+  const r = spawnSync(py, ["tools/light-vrm.py", from, to], { encoding: "utf8", env: { ...process.env, PYTHONUTF8: "1" } });
+  console.log((r.stdout || r.stderr || "").trim().split("\n").pop());
+  return r.status === 0 && existsSync(to);
+}
 
 // VRM の中の利用条件を読む。再配布してよいと読み取れたときだけ true。そうでなければ理由の文
 function vrmCanShare(buf) {

@@ -90,13 +90,21 @@ function readLines(path, errors) {
     if (!l) return;
     const off = l.match(/^(\d+:\d{2}(?::\d{2})?)\s+外す$/);
     if (off) { out.drop.add(sec(off[1])); return; }
-    const m = l.match(/^(\d+:\d{2}(?::\d{2})?)\s+(実況|雑談)\s+(.+)$/);
-    if (!m) { errors.push(`${at}: 「時刻 実況|雑談 セリフ」の形になっていません → ${l.slice(0, 30)}`); return; }
+    const m = l.match(/^(\d+:\d{2}(?::\d{2})?|\+)\s+(実況|雑談)\s+(.+)$/);
+    if (!m) { errors.push(`${at}: 「時刻 実況|雑談 セリフ」か「+ 雑談 セリフ」の形になっていません → ${l.slice(0, 30)}`); return; }
     // [笑う] [うなずく] などの印を外して、表情としぐさにする
     const { line, errors: bad, ...mark } = parseMarks(m[3]);
     for (const e of bad) errors.push(`${at}: ${e}`);
     if (!line) { if (!bad.length) errors.push(`${at}: セリフがありません`); return; }
-    out.lines.push({ abs: sec(m[1]), kind: m[2] === "実況" ? "scene" : "chat", line, at, topic: topicNow, ...mark });
+    // + は、前のセリフに続けて話す。時刻は、前のセリフを読み終わるころを見積もって入れる（アプリは、実際に読み終わってから続ける）
+    let abs, follow = false;
+    if (m[1] === "+") {
+      const prev = out.lines[out.lines.length - 1];
+      if (!prev) { errors.push(`${at}: + の前に、時刻のあるセリフが要ります`); return; }
+      abs = Math.ceil(prev.abs + prev.line.length / CHARS_PER_SEC + 1);
+      follow = true;
+    } else abs = sec(m[1]);
+    out.lines.push({ abs, kind: m[2] === "実況" ? "scene" : "chat", line, at, topic: topicNow, ...mark, ...(follow ? { follow } : {}) });
   });
   out.lines.sort((a, b) => a.abs - b.abs);
   return out;
@@ -160,6 +168,9 @@ function build(name) {
     if (b.abs - a.abs > MAX_SILENCE)
       errors.push(`${fmt(a.abs)}〜${fmt(b.abs)}: 無言が${b.abs - a.abs}秒続きます（${MAX_SILENCE}秒まで）`);
   }
+  // 1つの話を、間をあけながら1文ずつ話すと、会話に聞こえない
+  const alone = own.lines.filter((l, i) => l.topic && !l.follow && !own.lines[i + 1]?.follow);
+  if (alone.length > own.lines.filter(l => l.topic).length * 0.4) console.log(`  コーナーの中で、1文ずつ離れているセリフが ${alone.length}件あります。続きのセリフは、時刻の代わりに + を書いて、続けて話します`);
   const marked = lines.filter(l => l.face || l.gesture || l.marks).length;
   if (marked) console.log(`表情・しぐさの印: ${marked}件（発話 ${lines.length}件のうち）`);
   if (marked * 4 < lines.length) console.log(`  印が少なめです。目安は、セリフ2本に1つです`);
@@ -188,7 +199,7 @@ function build(name) {
     act: it.act, amount: it.amount || 0, place: it.place || "", abs: it.abs }));
   for (const l of lines) {
     const hit = items.find(x => x.abs === l.abs && !x.line);
-    const mark = { ...(l.face ? { face: l.face } : {}), ...(l.gesture ? { gesture: l.gesture } : {}), ...(l.marks ? { marks: l.marks } : {}) };
+    const mark = { ...(l.face ? { face: l.face } : {}), ...(l.gesture ? { gesture: l.gesture } : {}), ...(l.marks ? { marks: l.marks } : {}), ...(l.follow ? { follow: true } : {}) };
     if (hit) { hit.line = l.line; hit.kind = l.kind; Object.assign(hit, mark); continue; }
     const prev = [...rec.items].reverse().find(x => x.abs <= l.abs) || rec.items[0];
     items.push({ t: fmt(l.abs), scene: prev?.scene || "", line: l.line, kind: l.kind,
