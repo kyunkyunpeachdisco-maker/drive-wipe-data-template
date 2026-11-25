@@ -57,6 +57,16 @@ jobs:
         if: steps.check.outputs.go == '1'
         with:
           path: _site
+      # 送ったばかりのファイルが GitHub の側でまだ見つからず、失敗することがある。少し待ち、失敗したらもう1回だけ試す
+      - name: 少し待つ
+        if: steps.check.outputs.go == '1'
+        run: sleep 10
       - id: deploy
         if: steps.check.outputs.go == '1'
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+      - name: 失敗したので、待ってからもう1回試す
+        if: steps.check.outputs.go == '1' && steps.deploy.outcome == 'failure'
+        run: sleep 45
+      - if: steps.check.outputs.go == '1' && steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v5
