@@ -33,6 +33,12 @@ save() {
 main() {   # 途中でこのファイルが入れ替わってもよいように、全体を読み込んでから動かす
 sync_latest || { echo "::error::最新の取り込みに失敗しました"; exit 1; }
 mkdir -p videos; touch "$REQ"
+# YouTube の決まりで、動画の題などは30日までしか取っておけない。過ぎる前に取り直す（依頼がなくても毎日見る）
+refresh_meta() { node tools/refresh-meta.mjs; }
+if refresh_meta; then
+  dirs=(videos); [ -d scripts ] && dirs+=(scripts)
+  save_work "更新: 動画の題など（YouTube の決まりによる取り直し）" refresh_meta "${dirs[@]}" || echo "::warning::動画の題の保存に失敗しました（次の実行でやり直します）"
+fi
 read_requests; lines=("${reqs[@]}")
 echo "依頼: ${#lines[@]}件"; printf '%s\n' "${lines[@]}"
 [ ${#lines[@]} = 0 ] && exit 0

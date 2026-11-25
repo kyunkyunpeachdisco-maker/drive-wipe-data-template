@@ -48,14 +48,9 @@ async function fetchPage(url) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   };
-  try { return await get(url); }
-  catch (e) {
-    // ActionsのIPを弾くサイト（ココログ等）は、読み取りプロキシ経由でもう一度だけ試す
-    // 元のHTMLやXMLのまま受け取る（文章に直した形だと、フィードの中の記事を見分けられない）
-    const t = await get("https://r.jina.ai/" + url, { "X-Return-Format": "html", "X-No-Cache": "true" });
-    if (t.trim()) return t;
-    throw e;
-  }
+  // Actions からの読み取りを断るサイト（ココログなど）は、回り道をせずに読まない。
+  // 読みたいときは、自分のPCで node tools/fetch-articles.mjs を実行して、articles/ を保存する
+  return get(url);
 }
 
 // フィードなら項目を読む。本文がフィードに入っていればそれも持ち帰る

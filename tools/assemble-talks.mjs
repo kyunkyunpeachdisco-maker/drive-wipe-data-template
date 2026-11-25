@@ -1,4 +1,4 @@
-// 広告のあいだに話す小話（talks/*.txt）を点検して、talks/index.json にまとめる（Node / 依存なし）
+// 小話（talks/*.txt）を点検して、talks/index.json にまとめる（Node / 依存なし）
 //
 // 使い方: node tools/assemble-talks.mjs
 //   読むもの: talks/any.txt（いつでも使える話）、talks/articles.txt（記事の話）、talks/<動画ID>.txt（その動画の話）
@@ -10,7 +10,7 @@
 //   # 区間：6:00〜20:00         途中の話だけ。この区間で広告が出たときに話す（書かなければ、どこでも）
 //   # 記事：https://…           記事の話だけ。articles/ にある記事の URL
 //   [笑う] セリフ               1行が1つのセリフ。表情・しぐさの印は、台本と同じ書き方
-//   「行こう」「戻ろう」は、話し終えて映像に戻るときのひとこと（セリフは1つ）。それぞれ、出発前・途中の広告のあとに使う
+//   「行こう」「戻ろう」は、走り出すとき・続きから見るときのひとこと（セリフは1つ）
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -18,7 +18,7 @@ import { parseMarks } from "./marks.mjs";
 
 const WHEN = { "出発前": "start", "途中": "mid", "いつでも": "any", "行こう": "go", "戻ろう": "back" };
 const CHARS_PER_SEC = 5.5;      // 声の速さの目安
-const MIN_SEC = 6, MAX_SEC = 22;
+const MIN_SEC = 4, MAX_SEC = 16;
 
 const sec = s => s.split(":").map(Number).reduce((a, b) => a * 60 + b, 0);
 const errors = [], notes = [];
