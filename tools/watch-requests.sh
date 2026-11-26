@@ -55,7 +55,8 @@ for l in "${lines[@]}"; do
   rc=0
   if [ "$1" = "記事" ]; then
     shift
-    [ $# -gt 0 ] && { ARTICLE_URLS="$*" node tools/fetch-articles.mjs || rc=$?; }
+    if [ $# -gt 0 ]; then ARTICLE_URLS="$*" node tools/fetch-articles.mjs || rc=$?
+    else node tools/fetch-youtube.mjs || echo "::warning::YouTube の新着は、まとめられませんでした（上のログ）"; fi
   elif [ "$1" = "候補" ]; then
     shift
     LIST_ONLY=true QUERY="$*" node tools/watch-video.mjs || rc=$?

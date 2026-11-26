@@ -32,6 +32,7 @@
 - `character/persona.md` … キャラクター設定。セリフを書くときの人物像
 - `character/interests.md` … 興味・関心。雑談の引き出し
 - `character/feeds.md` … 記事を取り込むフィード（RSS/Atom）や一覧ページのURL。1行に1つ
+- `character/channels.md` … YouTube のチャンネルかプレイリストの URL を、1行に1つ書く。`tools/fetch-youtube.mjs` が、書いたチャンネルとプレイリストの動画を Gemini にまとめさせ、まとめを `articles/youtube-<動画ID>.md` に置く
 - `audio/<台本と同じ名前>/<声>/` … 音声。ファイル名は本文のハッシュ。`index.json` が一覧
 - `avatar/` … アバターの設定（`settings.json`）と、置いてあればモデル（`model.vrm`）
 - `台本の書き方.md` … 台本を書く手順と書き方（どのAIエージェントでも共通）
@@ -56,7 +57,7 @@
 ## そのほかの決まり
 
 ### キャラクター（character/）
-- `persona.md` `interests.md` `feeds.md` は自由に書き換えてよい。次に書く台本から反映する
+- `persona.md` `interests.md` `feeds.md` `channels.md` は自由に書き換えてよい。次に書く台本から反映する
 
 ### 音声（audio/）
 - 生成物。中身の音声ファイルは手で編集しない
