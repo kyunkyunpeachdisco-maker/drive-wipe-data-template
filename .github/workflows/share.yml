@@ -3,7 +3,7 @@ name: share
 # URL で見せる台本を、GitHub Pages に出す。リポジトリは非公開のままで、share/list.txt に書いた台本だけが公開される。
 #   - share/list.txt に、見せる台本の名前（scripts/ のファイル名から .json を除いたもの）を1行に1つ書く
 #   - 名前を消すと、その台本は公開されなくなる
-#   - 台本・声・アバターを保存し直すと、公開しているものも新しくなる
+#   - 台本・声・アバター・小話を保存し直すと、公開しているものも新しくなる。動画の題を取り直したとき（watch-video）も
 # 公開されるもの: 台本のセリフ、声、話した記事の題とURL、アバター（モデルは、再配布が許されているときだけ）
 # 先に1回だけ、リポジトリの Settings → Pages で、Source を「GitHub Actions」にしておく。
 # 処理の中身は tools/build-share.mjs（道具の更新で新しくなる）
@@ -15,8 +15,10 @@ on:
       - 'share/list.txt'
       - 'scripts/**'
       - 'avatar/**'
+      - 'talks/**'
+  # Actions 自身の保存では push の合図が出ないので、声づくりと動画の記録が終わったときにも作り直す
   workflow_run:
-    workflows: [make-audio]
+    workflows: [make-audio, watch-video]
     types: [completed]
   workflow_dispatch:
 
