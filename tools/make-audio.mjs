@@ -112,6 +112,10 @@ const yomiIn = d => {
   try { return new Map(JSON.parse(readFileSync(`${d}/index.json`, "utf8")).items.map(x => [x.h, x.yomi || x.text])); } catch (e) { return new Map(); }
 };
 const yomiHere = yomiIn(dir);
+// 前の回が途中で落ちたときに作れていた分の読み。これがあれば、作り直さない
+const PART = `${dir}/作りかけ.json`;
+try { for (const [h, y] of Object.entries(JSON.parse(readFileSync(PART, "utf8")))) yomiHere.set(h, y); } catch (e) {}
+const partial = {};
 // ほかの台本の同じ声の置き場
 const others = readdirSync("audio", { withFileTypes: true }).filter(d => d.isDirectory() && d.name !== key)
   .map(d => `audio/${d.name}/voicevox-${speakerId}`).filter(d => existsSync(d));
@@ -130,6 +134,7 @@ try {
     } else {
       if (existsSync(`${dir}/${h}.wav`)) reread++;
       writeFileSync(`${dir}/${h}.wav`, await synth(say));
+      partial[h] = yomi;
       made++;
       if (made % 10 === 0) console.log(`  ${made}件 作りました`);
     }
@@ -137,7 +142,15 @@ try {
     // VOICEVOX が読むつもりのカナ。' のすぐ前の音が高い。/ と 、 は区切り
     readings.push(`${text}\n    ${(await query(say)).kana}`);
   }
+} catch (e) {
+  if (Object.keys(partial).length) {
+    let had = {};
+    try { had = JSON.parse(readFileSync(PART, "utf8")); } catch (err) {}
+    writeFileSync(PART, JSON.stringify({ ...had, ...partial }) + "\n");
+  }
+  throw e;
 } finally { await dictClear(); }
+if (existsSync(PART)) unlinkSync(PART);
 writeFileSync(`${dir}/読み.txt`, `# ${script.meta?.title || key} の読み（${voiceName}）。tools/make-audio.mjs が書く。手で直さない\n# 各セリフの下が、VOICEVOX の読み。' のすぐ前の音が高く、そのあと下がる。/ と 、 は区切り\n\n${readings.join("\n")}\n`);
 const want = new Set(items.map(x => `${x.h}.wav`));
 let removed = 0;

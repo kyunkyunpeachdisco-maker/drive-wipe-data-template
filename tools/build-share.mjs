@@ -82,13 +82,17 @@ for (const key of keys) {
 // 広告のあいだの小話。共有している動画の話と、いつでも使える話・記事の話の新しいものから
 const all = json("talks/index.json")?.talks || [];
 const vids = new Set(items.map(i => i.videoId));
-const newest = kind => all.filter(t => t.kind === kind && t.when !== "go" && t.when !== "back").sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 10);
+// 声がまだできていない話は、新しくても後回しにする（見る人には字幕だけで出てしまう）
+const tTake = pickVoice("talks"), tMeta = tTake ? json(`audio/talks/${tTake}/index.json`) : null;
+const voiced = new Set((tMeta?.items || []).filter(it => existsSync(`audio/talks/${tTake}/${it.h}.${it.ext}`)).map(it => it.text));
+const hasVoice = t => !tMeta || t.lines.every(l => voiced.has(l.line));
+const newest = kind => all.filter(t => t.kind === kind && t.when !== "go" && t.when !== "back" && hasVoice(t)).sort((a, b) => (b.addedAt || "").localeCompare(a.addedAt || "")).slice(0, 10);
 const talks = items.length ? [...new Set([...all.filter(t => t.kind === "video" ? vids.has(t.videoId) : t.when === "go" || t.when === "back"), ...newest("any"), ...newest("article")])] : [];
 if (talks.length) {
   put(`${out}/talks.json`, JSON.stringify({ version: 1, talks: talks.map(t => ({ ...t, addedAt: dayOf(t.addedAt) })) }));
-  const take = pickVoice("talks");
+  const take = tTake;
   if (take) {
-    const meta = json(`audio/talks/${take}/index.json`), want = new Set(talks.flatMap(t => t.lines.map(l => l.line)));
+    const meta = tMeta, want = new Set(talks.flatMap(t => t.lines.map(l => l.line)));
     const use = (meta?.items || []).filter(it => want.has(it.text) && /^[0-9a-f]{6,64}$/.test(it.h) && /^[a-z0-9]{2,5}$/.test(it.ext || "") && existsSync(`audio/talks/${take}/${it.h}.${it.ext}`));
     mkdirSync(`${out}/audio/talks`, { recursive: true });
     for (const it of use) copyFileSync(`audio/talks/${take}/${it.h}.${it.ext}`, `${out}/audio/talks/${it.h}.${it.ext}`);

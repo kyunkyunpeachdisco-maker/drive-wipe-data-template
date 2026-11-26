@@ -47,8 +47,8 @@ function channelQuery(line) {
   if (pl) return { playlist: pl[1] };
   const id = line.match(/(UC[\w-]{22})/);
   if (id) return { id: id[1] };
-  const h = line.match(/@([\w.\-]+)/);
-  if (h) return { forHandle: "@" + h[1] };
+  const h = line.match(/@([^\s/?#&]+)/);
+  if (h) { try { return { forHandle: "@" + decodeURIComponent(h[1]) }; } catch { return { forHandle: "@" + h[1] }; } }
   return null;
 }
 
@@ -91,7 +91,13 @@ const PROMPT = `この YouTube 動画を最後まで見て、日本語でまと�
 - 車の運転の映像（車載カメラやドライブの景色）が中心の動画なら、drive を true にする`;
 
 /* ---------- 外すもの ---------- */
-const skipped = new Set(readSafe(SKIP).split(/\r?\n/).map(l => l.split(/\s/)[0]).filter(Boolean));
+const skipped = new Set(), failed = {};
+for (const l of readSafe(SKIP).split(/\r?\n/)) {
+  const [id, why = ""] = l.split(/\s(.*)/);
+  if (!/^[\w-]{11}$/.test(id || "")) continue;
+  if (why.startsWith("失敗")) { if ((failed[id] = (failed[id] || 0) + 1) >= 2) skipped.add(id); }
+  else skipped.add(id);
+}
 const haveArticle = new Set(existsSync("articles") ? readdirSync("articles").map(f => (f.match(/^youtube-([\w-]{11})\.md$/) || [])[1]).filter(Boolean) : []);
 const driveIds = new Set(), driveChannels = new Set();
 for (const f of existsSync("videos") ? readdirSync("videos").filter(f => /^[\w-]{11}\.json$/.test(f)) : []) {
@@ -112,10 +118,17 @@ for (const line of lines) {
     let ids, addedAt = {};
     if (q.playlist) {
       if (/^(WL|LL|HL)$/.test(q.playlist)) { console.log(`「後で見る」「高く評価した動画」「履歴」は、YouTube の決まりで読めません: ${line}`); continue; }
-      const items = (await yt("playlistItems", { part: "contentDetails,snippet", playlistId: q.playlist, maxResults: "50" }).catch(e => {
-        if (/ 404/.test(e.message)) throw new Error("見つかりません。非公開のプレイリストは読めないので、公開か限定公開にしてください");
-        throw e;
-      })).items || [];
+      const items = [];
+      for (let page = "", n = 0; n < 10; n++) {
+        const r = await yt("playlistItems", { part: "contentDetails,snippet", playlistId: q.playlist, maxResults: "50", ...(page ? { pageToken: page } : {}) }).catch(e => {
+          if (/ 404/.test(e.message)) throw new Error("見つかりません。非公開のプレイリストは読めないので、公開か限定公開にしてください");
+          throw e;
+        });
+        items.push(...(r.items || []));
+        // まだまとめていない動画が、もう十分に見つかっていれば、先は読まない
+        if (!r.nextPageToken || items.filter(it => !skipped.has(it.contentDetails?.videoId) && !haveArticle.has(it.contentDetails?.videoId)).length >= 20) break;
+        page = r.nextPageToken;
+      }
       ids = items.map(it => it.contentDetails?.videoId).filter(Boolean);
       for (const it of items) addedAt[it.contentDetails?.videoId] = it.snippet?.publishedAt || "";
     } else {
@@ -158,6 +171,7 @@ for (const p of picks.slice(0, MAX_VIDEOS)) {
   } catch (e) {
     console.log(`  打ち切り: ${e.message}`);
     if (e.daily) { stop = e.message; break; }
+    skipLog.push(`${p.id} 失敗${failed[p.id] ? "（2回目なので、もう見ない）" : "（もう一度失敗したら、もう見ない）"}`);
     continue;
   }
   if (r.drive) { skip(p.id, "ドライブの映像"); console.log("  ドライブの映像なので外しました"); continue; }

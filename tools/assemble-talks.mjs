@@ -6,7 +6,7 @@
 //
 // 書き方:
 //   # 話：題                    ここから次の「# 話：」までが1つの話。題は、同じファイルの中で重ねない
-//   # 場面：出発前              出発前／途中／いつでも（書かなければ「いつでも」）／行こう／戻ろう
+//   # 場面：出発前              出発前／途中／いつでも（書かなければ「いつでも」）／行こう／戻ろう。動画の話に「いつでも」は使えない
 //   # 区間：6:00〜20:00         途中の話だけ。この区間で広告が出たときに話す（書かなければ、どこでも）
 //   # 記事：https://…           記事の話だけ。articles/ にある記事の URL
 //   [笑う] セリフ               1行が1つのセリフ。表情・しぐさの印は、台本と同じ書き方
@@ -56,7 +56,7 @@ for (const f of readdirSync("talks").filter(f => f.endsWith(".txt")).sort()) {
         if (!WHEN[m[2]]) errors.push(`${at}: 場面は ${Object.keys(WHEN).join("／")} のどれかにします`);
         else cur.when = WHEN[m[2]];
       } else if (m[1] === "区間") {
-        const r = m[2].match(/^(\d+:\d{2}(?::\d{2})?)\s*[〜~－-]\s*(\d+:\d{2}(?::\d{2})?)$/);
+        const r = m[2].match(/^(\d+:\d{2}(?::\d{2})?)\s*[〜～~－-]\s*(\d+:\d{2}(?::\d{2})?)$/);
         if (!r || sec(r[1]) >= sec(r[2])) errors.push(`${at}: 区間は 6:00〜20:00 の形で書きます`);
         else { cur.from = sec(r[1]); cur.to = sec(r[2]); }
       } else {
@@ -86,7 +86,8 @@ for (const t of talks) {
   else if (bridge ? s > 5 : s < MIN_SEC || s > MAX_SEC) errors.push(`${t.at}「${t.title}」: 話す長さが約${Math.round(s)}秒です。${bridge ? "5秒まで" : `${MIN_SEC}〜${MAX_SEC}秒`}にします`);
   if (bridge && t.kind === "article") errors.push(`${t.at}「${t.title}」: 「行こう」「戻ろう」は articles.txt に書かない`);
   if (t.kind === "article" && !t.url) errors.push(`${t.at}「${t.title}」: 記事の話には「# 記事：URL」が要ります`);
-  if (t.from != null && (t.kind !== "video" || t.when === "start")) errors.push(`${t.at}「${t.title}」: 区間は、動画の話の「途中」だけに書けます`);
+  if (t.kind === "video" && t.when === "any") errors.push(`${t.at}「${t.title}」: 動画の話には「# 場面：出発前」か「# 場面：途中」を書きます（いつでも、の動画の話は、アプリが選ばない）`);
+  if (t.from != null && (t.kind !== "video" || t.when !== "mid")) errors.push(`${t.at}「${t.title}」: 区間は、動画の話の「途中」だけに書けます`);
   if (t.kind === "video" && !existsSync(`videos/${t.videoId}.json`)) errors.push(`${t.at}: videos/${t.videoId}.json がありません（映像の記録を読まずに書かない）`);
   t.sec = Math.round(s);
   t.id = createHash("sha256").update(`${t.file}/${t.title}`, "utf8").digest("hex").slice(0, 10);
