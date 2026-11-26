@@ -34,11 +34,14 @@ const articles = existsSync("articles") ? readdirSync("articles").filter(f => f.
            used: ((t.match(/^-\s*使った台本:\s*(.*)$/m) || [])[1] || "").split(/[、,\s]+/) };
 }) : [];
 
-// 声：アプリで選んでいる声（VOICEVOX）があればそれ、なければフォルダ名の降順で最初のもの
+// 声：アプリで選んでいる声（VOICEVOX）があればそれ、なければフォルダ名の降順で最初のもの。
+// 自分の声（own-）は、avatar/settings.json の "share-own-voice": true のときだけ公開する
 function pickVoice(key) {
   const dir = `audio/${key}`;
   if (!existsSync(dir)) return null;
-  const takes = readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(`${dir}/${d.name}/index.json`)).map(d => d.name).sort().reverse();
+  const all = readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(`${dir}/${d.name}/index.json`)).map(d => d.name).sort().reverse();
+  const own = all.filter(t => t.startsWith("own-")), takes = all.filter(t => !t.startsWith("own-"));
+  if (settings["share-own-voice"] === true && own.length) return own[0];
   const want = `voicevox-${settings["player-voice-voicevox"] || ""}`;
   return takes.find(t => t === want || t.startsWith(want + "_")) || takes[0] || null;
 }
